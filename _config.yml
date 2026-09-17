@@ -50,3 +50,10 @@ plugins:
 #   - vendor/cache/
 #   - vendor/gems/
 #   - vendor/ruby/
+
+header_pages:
+  - category/security.markdown
+  # - category/devops.md
+  # - category/web.md
+  # - category/graphics.md
+  # - category/algorithmics.md

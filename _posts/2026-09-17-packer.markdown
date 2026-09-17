@@ -1,0 +1,45 @@
+---
+layout: post
+title:  "ELF packer"
+date:   2026-09-17 17:20:30 +0200
+categories: Security
+---
+
+*Disclaimer : this, along with all security projects, is stricly educational and should not be used maliciously in any shape or form.*
+
+## The goal
+This project aims at making an ELF packer (an MS-DOS packer wouldn't be very different conceptually). It will both encrypt and compress binaries, and decompresss / decrypt them at runtime before executing the original executable.
+
+### What is a packer anyway ?
+An ELF (Executable and Linkable Format) packer is a tool that compresses, encrypts, or modifies Linux binary files to reduce their size, hide their code, or protect them from reverse engineering.
+
+This has several applications :
+- Compressing an executable for a software installer / game when its too large to download efficiently
+- Making intellectual property code harder to reverse engineer
+- Hiding malicious code from antivirus software (along with other methods)
+
+### How does it work ?
+Our packer is a program that takes the path to another binary as argument.
+The packer will first parse the executable to check if its a valid target (64 bits ELF), and then craft the final binary.
+
+The architecture I've chosen is in 3 stages :
+
+- A first stage stub, the loader, that reads `/proc/self/exe` to get the actual memory of the binary at runtime, before loading the second stage into memory, and jumping to it
+- The second stage, the runtime loader, which will read the actual encrypted / compressed data that's located somewhere in memory (I will explain that later) before decrypting it and loading it, along with its original interpreter. It will then apply relocations and setup the environment so that the "guest" binary can run normally.
+- The third stage is basically running the original binary after it was returned to its original state.
+
+**But, why do we need three stages, you might ask.**
+
+1. Stage1 must be loaded at the guest's fixed addresses (so the guest can run there later)
+2. Stage1 therefore inherits the packed exe's brk position (the program break, a pointer to the end of the program's data segment)
+3. If Stage1 tried to load the guest directly, it would conflict with itself in memory
+4. Stage2 is loaded separately via `mmap(NULL)` at a kernel-chosen address *out of the way*
+5. Stage2 can then `mmap` the guest at its correct addresses using `MAP_FIXED`
+
+This separation is necessary because:
+
+- PT_LOAD segments in the packed executable are mapped by the kernel loader
+- Those segments must cover the guest's address range (to set brk correctly) but the guest data isn't there yet (it's encrypted in the file)
+- Stage2 bridges this gap by loading after the kernel loader is done
+
+### So, what does the packed binary look like ?
