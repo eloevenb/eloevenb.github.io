@@ -53,6 +53,7 @@ plugins:
 
 header_pages:
   - category/security.markdown
+  - category/algo.markdown
   # - category/devops.md
   # - category/web.md
   # - category/graphics.md

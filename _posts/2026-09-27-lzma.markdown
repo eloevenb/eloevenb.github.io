@@ -1,0 +1,66 @@
+---
+layout: post
+title:  "Study on LZMA (Lempel–Ziv–Markov chain algorithm)"
+date:   2026-09-26 10:20:30 +0200
+categories: Algo
+---
+
+## What is LZMA ?
+LZMA is a compression algorithm. It's a dictionnary compresser based on the LZ77 core idea.
+
+## The structure
+The most important thing that makes sure the compression is lossless is the symmetry of the compression and decompression processes.
+
+The data goes through multiple steps of encoding, including a variant of the LZ77 sliding window.
+
+LZMA uses a Markov chain that makes decisions based on a set of probabilities, all of which are deterministic from the set of already decoded data, which allows the decompression to make the same decisions as the compression algorithm made.
+
+![High-level LZMA diagram]({{ '/assets/images/LZMA_high_level_diagram.png' | relative_url }})
+
+### Data pre-processing
+Compression ratio is directly influenced by the entropy of data (more entropy = less patterns / repeating sequences in the data). 
+
+If we know beforehands what kind of data needs to be compressed (for instance, an elf64 executable, or an image), we can pre process that data to either make it smaller, or create more patterns.
+
+A good instance of that is the [BCJ](https://en.wikipedia.org/wiki/BCJ_(algorithm)) filter : in assembly, you can make jump to instructions with a relative address instead of an absolute one to use less bytes for the address. But this creates entropy : there can be multiple jmp instructions refering to the same address using different relative addresses.
+
+Converting those to absolute does not make the data smaller but can produce a lot of matches during compression.
+
+This step is not part of the LZMA algorithm itself, but is often used in conjuncture to make the compression ratio better.
+
+### Sliding dictionary encoding
+LZMA uses a similar technique to LZ77 : it keeps a sliding window of the data that was already decoded as a dictionary.
+
+The sliding dictionary is the buffer of bytes already produced. The encoder writes two types of tokens : literals or matches. 
+
+A literal is a sequence of data that was not matched in the sliding window. When the encoder finds a match, it does not store those bytes again, but instead stores a distance and a length, and the decoder copies them out of that buffer.
+
+Let's say we want to encode `abcabc`:
+
+| position 	| 0   	| 1   	| 2   	| 3                	| 4 	| 5 	|
+|----------	|-----	|-----	|-----	|------------------	|---	|---	|
+| byte     	| a   	| b   	| c   	| a                	| b 	| c 	|
+| token    	| lit 	| lit 	| lit 	| match(d: 3, l: 3) 	|   	|   	|
+
+Here, we can see that we only need to write the first three bytes `abc`, since they repeat at position 3. The encoder only needs to store a match token with distance 3 (since the beginning of the sequence is 3 bytes before position 3), and length 3, to match the whole abc word.
+
+The decoder then writes literals as-is, and the match tokens are copied using the `distance` and `length` values.
+
+This is the standard LZ77 algorithm, which lzma improves upon. The biggest limitation of this algorithm is the dictionary size.
+
+A big window size can make the search very long, and we can't store infinitely big `distance` and `length` values as those could then take up too much space in the encoded data.
+
+Generally, the bigger the window size, the more likely we're going to find a match, so being able to find matches in a big window can be a huge improvement for ratio.
+
+![Impact of window size on compression]({{ 'assets/images/alice_window_size.png' | relative_url }})
+
+Deflate uses a window size of 32Kib, where an LZMA dictionary is often 6-64Mib and can be way bigger, up to 4GiB.
+
+#### What the window holds
+Both the encoder and decoder keep the last `dictSize` uncompressed bytes in a cyclic buffer. This means that once the buffer is full, new output overwrite the oldest bytes, which is the "sliding" part.
+
+A match can therefore only point at bytes that are still inside the window. And since the window is always empty at the start of the stream, the first bytes are always literals.
+
+
+
+### Range encoding
